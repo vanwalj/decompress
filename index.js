@@ -8,6 +8,8 @@ const decompressUnzip = require('decompress-unzip');
 const mkdirp = require('mkdirp');
 const pify = require('pify');
 const stripDirs = require('strip-dirs');
+const _ = require('lodash');
+const Bluebird = require('bluebird');
 
 const fsP = pify(fs);
 
@@ -41,36 +43,39 @@ const extractFile = (input, output, opts) => runPlugins(input, opts).then(files 
 		return files;
 	}
 
-	return Promise.all(files.map(x => {
-		const dest = path.join(output, x.path);
-		const mode = x.mode & ~process.umask();
-		const now = new Date();
+	return Bluebird.mapSeries(_.chunk(files, opts.fdChunk), files =>
+		Promise.all(files.map(x => {
+			const dest = path.join(output, x.path);
+			const mode = x.mode & ~process.umask();
+			const now = new Date();
 
-		if (x.type === 'directory') {
-			return pify(mkdirp)(dest)
-				.then(() => fsP.utimes(dest, now, x.mtime))
+			if (x.type === 'directory') {
+				return pify(mkdirp)(dest)
+					.then(() => fsP.utimes(dest, now, x.mtime))
+					.then(() => x);
+			}
+
+			return pify(mkdirp)(path.dirname(dest))
+				.then(() => {
+					if (x.type === 'link') {
+						return fsP.link(x.linkname, dest);
+					}
+
+					if (x.type === 'symlink' && process.platform === 'win32') {
+						return fsP.link(x.linkname, dest);
+					}
+
+					if (x.type === 'symlink') {
+						return fsP.symlink(x.linkname, dest);
+					}
+
+					return fsP.writeFile(dest, x.data, {mode});
+				})
+				.then(() => x.type === 'file' && fsP.utimes(dest, now, x.mtime))
 				.then(() => x);
-		}
-
-		return pify(mkdirp)(path.dirname(dest))
-			.then(() => {
-				if (x.type === 'link') {
-					return fsP.link(x.linkname, dest);
-				}
-
-				if (x.type === 'symlink' && process.platform === 'win32') {
-					return fsP.link(x.linkname, dest);
-				}
-
-				if (x.type === 'symlink') {
-					return fsP.symlink(x.linkname, dest);
-				}
-
-				return fsP.writeFile(dest, x.data, {mode});
-			})
-			.then(() => x.type === 'file' && fsP.utimes(dest, now, x.mtime))
-			.then(() => x);
-	}));
+		}))
+	)
+		.then(chunks => _.flatten(chunks));
 });
 
 module.exports = (input, output, opts) => {
@@ -88,7 +93,7 @@ module.exports = (input, output, opts) => {
 		decompressTarbz2(),
 		decompressTargz(),
 		decompressUnzip()
-	]}, opts);
+	], fdChunk: 1024}, opts);
 
 	const read = typeof input === 'string' ? fsP.readFile(input) : Promise.resolve(input);
 

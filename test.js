@@ -50,6 +50,16 @@ test.serial('extract file to directory', async t => {
 	await fsP.unlink(path.join(__dirname, 'test.jpg'));
 });
 
+test.serial('extract file to directory with multiple fd chunks', async t => {
+	const files = await m(path.join(__dirname, 'fixtures', 'file.tar'), __dirname, {fdChunks: 1});
+
+	t.is(files[0].path, 'test.jpg');
+	t.true(isJpg(files[0].data));
+	t.true(await pathExists(path.join(__dirname, 'test.jpg')));
+
+	await fsP.unlink(path.join(__dirname, 'test.jpg'));
+});
+
 test('extract symlink', async t => {
 	await m(path.join(__dirname, 'fixtures', 'symlink.tar'), __dirname, {strip: 1});
 	t.is(await fsP.realpath(path.join(__dirname, 'symlink')), path.join(__dirname, 'file.txt'));

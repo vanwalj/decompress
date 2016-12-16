@@ -97,6 +97,13 @@ Default: `0`
 
 Remove leading directory components from extracted files.
 
+##### fsChunks
+
+Type: `number`<br>
+Default: `1024`
+
+Split extract into multiple chunks so it doesn't overlap system simultaneous open fds.
+
 
 ## License
 
